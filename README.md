@@ -1,0 +1,2 @@
+# ocpgpt
+OpenShift GPT Solution
