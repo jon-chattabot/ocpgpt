@@ -22,7 +22,7 @@ from langchain.document_loaders import (
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma, FAISS
-from langchain.embeddings import HuggingFaceEmbeddings, OpenAIEmbeddings
+from langchain.embeddings import HuggingFaceEmbeddings, OpenAIEmbeddings, LlamaCppEmbeddings
 from langchain.docstore.document import Document
 from chromadb.config import Settings
 import nltk
@@ -33,9 +33,12 @@ load_dotenv()
 
 
 # Load environment variables
-persist_directory = os.environ.get('PERSIST_DIRECTORY', 'db')
-source_directory = os.environ.get('DOCUMENT_SOURCE_DIR', 'docs')
-embeddings_model_name = os.environ.get('EMBEDDINGS_MODEL_NAME', 'all-MiniLM-L6-v2')
+persist_directory = os.environ.get("PERSIST_DIRECTORY", 'db')
+source_directory = os.environ.get("DOCUMENT_SOURCE_DIR", 'docs')
+embedding_model_name = os.environ.get("EMBEDDING_MODEL_NAME", 'all-MiniLM-L6-v2')
+embedding_type = os.environ.get("EMBEDDING_TYPE", 'openai')
+model_path = os.environ.get("MODEL_PATH", "")
+database_type = os.environ.get("DATABASE_TYPE", "faiss")
 openai.api_key = os.environ.get("OPENAI_API_KEY", "")
 
 # chunk_size = 500
@@ -64,7 +67,6 @@ class MyElmLoader(UnstructuredEmailLoader):
         except Exception as e:
             # Add file_path to exception message
             raise type(e)(f"{self.file_path}: {e}") from e
-
         return doc
 
 
@@ -105,6 +107,7 @@ def load_single_document(file_path: str) -> List[Document]:
         print(f"ERROR: {file_path}", err)
     return docs
 
+
 def load_documents(source_dir: str, ignored_files: List[str] = []) -> List[Document]:
     """
     Loads all documents from the source documents directory, ignoring specified files
@@ -122,8 +125,8 @@ def load_documents(source_dir: str, ignored_files: List[str] = []) -> List[Docum
             for i, docs in enumerate(pool.imap_unordered(load_single_document, filtered_files)):
                 results.extend(docs)
                 pbar.update()
-
     return results
+
 
 def process_documents(ignored_files: List[str] = []) -> List[Document]:
     """
@@ -153,44 +156,59 @@ def does_vectorstore_exist(persist_directory: str) -> bool:
                 return True
     return False
 
-def main():
-    database_type = "faiss"  # faiss or chroma
 
-    if database_type == "chroma":
-        embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
-        CHROMA_SETTINGS = Settings(
-                chroma_db_impl='duckdb+parquet',
-                persist_directory=persist_directory,
-                anonymized_telemetry=False
-        )
-        if does_vectorstore_exist(persist_directory):
-            # Update and store locally vectorstore
-            print(f"Appending to existing vectorstore at {persist_directory}")
-            db = Chroma(persist_directory=persist_directory, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
-            collection = db.get()
-            texts = process_documents([metadata['source'] for metadata in collection['metadatas']])
-            print(f"Creating embeddings. May take some minutes...")
-            db.add_documents(texts)
-        else:
-            # Create and store locally vectorstore
+def create_embedding(embedding_type:str, model_path:str = "", embedding_model_name:str = "") -> (LlamaCppEmbeddings|OpenAIEmbeddings|HuggingFaceEmbeddings):
+    """
+    Create embedding
+    """
+    match embedding_type:
+        case "llama":
+            return LlamaCppEmbeddings(model_path=model_path)
+        case "openai":
+            embedding = OpenAIEmbeddings()
+            embedding.max_retries = 20
+            embedding.request_timeout = 30
+            embedding.show_progress_bar = True
+            return embedding
+        case "huggingface":
+            return HuggingFaceEmbeddings(model_name=embedding_model_name)
+        case _:
+            return LlamaCppEmbeddings(model_path=model_path)
+
+
+def main() -> None:
+    embedding = create_embedding(embedding_type=embedding_type, model_path=model_path, embedding_model_name=embedding_model_name)
+    match database_type:
+        case "chroma":
+            # prefer huggingface
+            chroma_settings = Settings(
+                    chroma_db_impl='duckdb+parquet',
+                    persist_directory=persist_directory,
+                    anonymized_telemetry=False
+            )
+            if does_vectorstore_exist(persist_directory):
+                # Update and store locally vectorstore
+                print(f"Appending to existing vectorstore at {persist_directory}")
+                db = Chroma(persist_directory=persist_directory, embedding_function=embedding, client_settings=chroma_settings)
+                collection = db.get()
+                texts = process_documents([metadata['source'] for metadata in collection['metadatas']])
+                print(f"Creating embedding. May take some minutes...")
+                db.add_documents(texts)
+            else:
+                # Create and store locally vectorstore
+                print("Creating new vectorstore")
+                texts = process_documents()
+                print(f"Creating embedding. May take some minutes...")
+                db = Chroma.from_documents(texts, embedding, persist_directory=persist_directory, client_settings=chroma_settings)
+            db.persist()
+        case _:
             print("Creating new vectorstore")
             texts = process_documents()
-            print(f"Creating embeddings. May take some minutes...")
-            db = Chroma.from_documents(texts, embeddings, persist_directory=persist_directory, client_settings=CHROMA_SETTINGS)
-        db.persist()
-    elif database_type == "faiss":
-        # setup embeddings in a way as to avoid hitting the openai rate limit too many times
-        embedding = OpenAIEmbeddings()
-        embedding.max_retries = 20
-        embedding.request_timeout = 30
-        embedding.show_progress_bar = True
-
-        print("Creating new vectorstore")
-        texts = process_documents()
-        print(f"Creating embeddings. May take some minutes...")
-        db = FAISS.from_documents(texts, embedding)
-        db.save_local(persist_directory)
+            print(f"Creating embedding. May take some minutes...")
+            db = FAISS.from_documents(texts, embedding)
+            db.save_local(persist_directory)
     print(f"Ingestion complete! You can now run run.sh to query your documents")
+
 
 if __name__ == "__main__":
     main()

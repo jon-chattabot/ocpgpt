@@ -5,8 +5,8 @@ import chainlit as cl
 from chainlit import Message, on_chat_start
 from langchain.chains import RetrievalQA
 from langchain.vectorstores import FAISS
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.llms import OpenAI
+from langchain.embeddings import OpenAIEmbeddings, HuggingFaceEmbeddings, LlamaCppEmbeddings
+from langchain.llms import OpenAI, SelfHostedHuggingFaceLLM, LlamaCpp
 from langchain.prompts.chat import (
     ChatPromptTemplate,
     SystemMessagePromptTemplate,
@@ -39,6 +39,34 @@ prompt = ChatPromptTemplate.from_messages(messages)
 chain_type_kwargs = {"prompt": prompt}
 
 
+embedding_model_name = environ.get("EMBEDDING_MODEL_NAME", 'all-MiniLM-L6-v2')
+embedding_type = environ.get("EMBEDDING_TYPE", 'openai')
+model_path = environ.get("MODEL_PATH", "")
+model_id = environ.get("MODEL_ID", "gpt2")
+openai.api_key = environ.get("OPENAI_API_KEY", "")
+
+# Helpers
+def create_embedding_and_llm(embedding_type:str, model_path:str = "", model_id:str = "", embedding_model_name:str = ""):
+    """
+    Create embedding and llm
+    """
+    temperature = 0.0
+    embedding = None
+    llm = None
+    match embedding_type:
+        case "llama":
+            llm = LlamaCpp(model_path=model_path, seed=0, n_ctx=2048, max_tokens=512, temperature=0.0, streaming=True)
+            embedding = LlamaCppEmbeddings(model_path=model_path)
+        case "openai":
+            llm = OpenAI(temperature=temperature)
+            embedding = OpenAIEmbeddings()
+        case "huggingface":
+            # gpu = runhouse.cluster(name="rh-a10x", instance_type="A100:1")
+            # llm = SelfHostedHuggingFaceLLM(model_id=model_id, hardware=gpu, model_reqs=["pip:./", "transformers", "torch"])
+            llm = OpenAI(temperature=temperature)
+            embedding = HuggingFaceEmbeddings(model_name=embedding_model_name)
+    return (llm, embedding)
+
 @on_chat_start
 async def main():
     ''' Startup '''
@@ -55,8 +83,11 @@ async def main():
 @cl.langchain_factory(use_async=True)
 def load_model() -> BaseRetrievalQA:
     """ Load model to ask questions of it """
-    llm = OpenAI(temperature=0.0)
-    embeddings = OpenAIEmbeddings()
+    (llm, embeddings) = create_embedding_and_llm(
+            embedding_type=embedding_type,
+            model_path=model_path,
+            model_id=model_id,
+            embedding_model_name=embedding_model_name)
 
     root_dir = path.dirname(path.realpath(__file__))
     db_dir = f"{root_dir}/db"
@@ -69,7 +100,7 @@ def load_model() -> BaseRetrievalQA:
 
 @cl.langchain_postprocess
 async def process_response(res:dict) -> None:
-    ''' Format response '''
+    """ Format response """
     answer = res["result"]
     sources:list[Document] = res["source_documents"]
     elements:list = []
