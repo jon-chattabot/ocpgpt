@@ -1,5 +1,6 @@
 docs/*
 db/*
+run-local.sh
 
 ignore/
 
