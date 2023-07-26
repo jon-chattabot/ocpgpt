@@ -44,6 +44,7 @@ embedding_type = environ.get("EMBEDDING_TYPE", 'openai')
 model_path = environ.get("MODEL_PATH", "")
 model_id = environ.get("MODEL_ID", "gpt2")
 openai.api_key = environ.get("OPENAI_API_KEY", "")
+show_sources = environ.get("SHOW_SOURCES", 'True').lower() in ('true', '1', 't')
 
 # Helpers
 def create_embedding_and_llm(embedding_type:str, model_path:str = "", model_id:str = "", embedding_model_name:str = ""):
@@ -102,11 +103,12 @@ def load_model() -> BaseRetrievalQA:
 async def process_response(res:dict) -> None:
     """ Format response """
     answer = res["result"]
-    sources:list[Document] = res["source_documents"]
+
     elements:list = []
-    for source in sources:
-        src_str:str = source.metadata.get("source", "/").rsplit('/', 1)[-1]
-        final_str:str = f"Page {str(source.page_content)}"
-        elements.append(cl.Text(content=final_str, name=src_str, display="inline"))
+    if show_sources:
+        for source in res["source_documents"]:
+            src_str:str = source.metadata.get("source", "/").rsplit('/', 1)[-1]
+            final_str:str = f"Page {str(source.page_content)}"
+            elements.append(cl.Text(content=final_str, name=src_str, display="inline"))
 
     await cl.Message(content=answer, elements=elements, author="OCP-GPT").send()
