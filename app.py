@@ -3,7 +3,7 @@ from os import environ, path
 import openai
 import chainlit as cl
 from chainlit import Message, on_chat_start
-from langchain.chains import RetrievalQA
+from langchain.chains import RetrievalQA, ConversationalRetrievalChain
 from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings, HuggingFaceEmbeddings, LlamaCppEmbeddings
 from langchain.llms import OpenAI, SelfHostedHuggingFaceLLM, LlamaCpp
@@ -14,6 +14,7 @@ from langchain.prompts.chat import (
 )
 from langchain.docstore.document import Document
 from langchain.chains.retrieval_qa.base import BaseRetrievalQA
+from langchain.memory import ConversationBufferMemory
 load_dotenv()
 
 SYSTEM_TEMPLATE = """Use the following pieces of context to answer the users question.
@@ -45,6 +46,8 @@ model_path = environ.get("MODEL_PATH", "")
 model_id = environ.get("MODEL_ID", "gpt2")
 openai.api_key = environ.get("OPENAI_API_KEY", "")
 show_sources = environ.get("SHOW_SOURCES", 'True').lower() in ('true', '1', 't')
+retrieval_type = environ.get("RETRIEVAL_TYPE", "conversational")  # conversational/qa
+verbose = environ.get("VERBOSE", 'True').lower() in ('true', '1', 't')
 
 # Helpers
 def create_embedding_and_llm(embedding_type:str, model_path:str = "", model_id:str = "", embedding_model_name:str = ""):
@@ -54,12 +57,13 @@ def create_embedding_and_llm(embedding_type:str, model_path:str = "", model_id:s
     temperature = 0.0
     embedding = None
     llm = None
+    streaming = True
     match embedding_type:
         case "llama":
-            llm = LlamaCpp(model_path=model_path, seed=0, n_ctx=2048, max_tokens=512, temperature=0.0, streaming=True)
+            llm = LlamaCpp(model_path=model_path, seed=0, n_ctx=2048, max_tokens=512, temperature=0.0, streaming=streaming)
             embedding = LlamaCppEmbeddings(model_path=model_path)
         case "openai":
-            llm = OpenAI(temperature=temperature)
+            llm = OpenAI(temperature=temperature, streaming=streaming)
             embedding = OpenAIEmbeddings()
         case "huggingface":
             # gpu = runhouse.cluster(name="rh-a10x", instance_type="A100:1")
@@ -82,8 +86,9 @@ async def main():
 
 
 @cl.langchain_factory(use_async=True)
-def load_model() -> BaseRetrievalQA:
+def load_model():
     """ Load model to ask questions of it """
+
     (llm, embeddings) = create_embedding_and_llm(
             embedding_type=embedding_type,
             model_path=model_path,
@@ -96,8 +101,31 @@ def load_model() -> BaseRetrievalQA:
     db = FAISS.load_local(db_dir, embeddings)
     retriever = db.as_retriever()
 
-    return RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True)
-
+    output_key = "result"
+    memory = ConversationBufferMemory(memory_key="chat_history", input_key="question", output_key=output_key, return_messages=True)
+    return_source_documents = show_sources
+    if retrieval_type == "conversational":
+        return ConversationalRetrievalChain.from_llm(
+                llm,
+                retriever,
+                memory=memory,
+                output_key=output_key,
+                verbose=verbose,
+                return_source_documents=return_source_documents)
+    else:
+        chain_type_kwargs = {
+            "memory": memory,
+            "verbose": verbose,
+            "output_key": output_key
+        }
+        return RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=retriever,
+            return_source_documents=return_source_documents,
+            verbose=verbose,
+            output_key=output_key,
+            chain_type_kwargs=chain_type_kwargs)
 
 @cl.langchain_postprocess
 async def process_response(res:dict) -> None:
@@ -105,7 +133,7 @@ async def process_response(res:dict) -> None:
     answer = res["result"]
 
     elements:list = []
-    if show_sources:
+    if show_sources and res.get("source_documents", None) is not None:
         for source in res["source_documents"]:
             src_str:str = source.metadata.get("source", "/").rsplit('/', 1)[-1]
             final_str:str = f"Page {str(source.page_content)}"
