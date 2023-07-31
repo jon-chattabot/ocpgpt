@@ -139,4 +139,7 @@ async def process_response(res:dict) -> None:
             final_str:str = f"Page {str(source.page_content)}"
             elements.append(cl.Text(content=final_str, name=src_str, display="inline"))
 
+    if verbose:
+        print(res)
+
     await cl.Message(content=answer, elements=elements, author="OCP-GPT").send()
