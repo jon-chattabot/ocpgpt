@@ -183,17 +183,9 @@ def create_embedding(embedding_type:str, model_path:str = "", embedding_model_na
         case _:
             return LlamaCppEmbeddings(model_path=model_path)
 
-def fetch_aws_documents(verbose:bool, source_dir:str, bucket_name:str, access_key:str, secret_key:str) -> None:
+def fetch_aws_documents(verbose:bool, source_dir:str, source_bucket) -> None:
     if verbose:
         print("fetching aws documents")
-    session = boto3.Session(
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key
-    )
-    s3 = session.resource('s3')
-
-    # select bucket
-    source_bucket = s3.Bucket(bucket_name)
 
     for s3_object in source_bucket.objects.all():
         path, filename = os.path.split(s3_object.key)
@@ -201,11 +193,26 @@ def fetch_aws_documents(verbose:bool, source_dir:str, bucket_name:str, access_ke
             print(f"downloading {path}/{filename}")
         source_bucket.download_file(s3_object.key, os.path.join(source_dir, filename))
 
+def upload_database(db_dir:str, db_bucket) -> None:
+    if verbose:
+        print("upload_database")
+    all_files = []
+    for ext in ["faiss", "pkl"]:
+        all_files.extend(
+            glob.glob(os.path.join(db_dir, f"**/*{ext}"), recursive=False)
+        )
 
 def main() -> None:
     embedding = create_embedding(embedding_type=embedding_type, model_path=model_path, embedding_model_name=embedding_model_name)
+    s3_bucket = None
     if aws_enable:
-        fetch_aws_documents(verbose, source_directory, aws_bucket_name, aws_access_key, aws_secret_key)
+        session = boto3.Session(
+            aws_access_key_id=aws_access_key,
+            aws_secret_access_key=aws_secret_key
+        )
+        s3 = session.resource('s3')
+        s3_bucket = s3.Bucket(aws_bucket_name)
+        fetch_aws_documents(verbose, source_directory, s3_bucket)
     match database_type:
         case "chroma":
             # prefer huggingface
@@ -235,6 +242,8 @@ def main() -> None:
             print(f"Creating embedding. May take some minutes...")
             db = FAISS.from_documents(texts, embedding)
             db.save_local(persist_directory)
+    if aws_enable:
+        upload_database(persist_directory, s3_bucket)
     print(f"Ingestion complete!")
 
 
