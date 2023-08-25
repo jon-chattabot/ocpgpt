@@ -43,7 +43,7 @@ database_type = os.environ.get("DATABASE_TYPE", "faiss")
 openai.api_key = os.environ.get("OPENAI_API_KEY", "")
 verbose = os.environ.get("VERBOSE", 'True').lower() in ('true', '1', 't')
 # aws
-aws_enable = os.environ.get("AWS_ENABLE", 'True').lower() in ('true', '1', 't')
+aws_enable = os.environ.get("AWS_ENABLE", 'False').lower() in ('true', '1', 't')
 aws_access_key = os.environ.get("AWS_ACCESS_KEY", "")
 aws_secret_key = os.environ.get("AWS_SECRET_KEY", "")
 aws_region = os.environ.get("AWS_REGION", "us-east-1")
