@@ -23,6 +23,12 @@ OpenShift GPT Solution
     pip install -r requirements.txt
     ```
 
+4. Create an `.env` file that looks like
+
+    ```ini
+    OPEN_API_KEY=YOUR_KEY_HERE
+    ```
+
 ### Ingesting
 
 1. Move all documents that you want to index into the `docs` directory
