@@ -1,6 +1,9 @@
 from dotenv import load_dotenv
 from os import environ, path
 from re import sub
+import datetime
+from dateutil import parser
+import calendar
 import openai
 import chainlit as cl
 from langchain import PromptTemplate
@@ -16,6 +19,8 @@ from langchain.prompts.chat import (
 from langchain.chains.retrieval_qa.base import BaseRetrievalQA
 from langchain.chains.conversational_retrieval.base import BaseConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
+from langchain.agents import initialize_agent, AgentType, Tool
+from langchain import LLMMathChain
 from chainlit.server import app
 from fastapi import Request
 from fastapi.responses import HTMLResponse
@@ -34,6 +39,24 @@ model_path = environ.get("MODEL_PATH", "")
 model_id = environ.get("MODEL_ID", "gpt2")
 openai.api_key = environ.get("OPENAI_API_KEY", "")
 botname = environ.get("BOTNAME", "OCP-GPT")
+
+today = datetime.datetime.now()
+
+# Date functions
+def todayDate():
+    return today.strftime('%m/%d/%y')
+
+# Get day of week for a date (or 'today')
+def dayOfWeek(date):
+    if date == 'today':
+        return calendar.day_name[today.weekday()]
+    else:
+        try:
+            theDate = parser.parse(date)
+        except:
+            return 'invalid date format, please use format: mm/dd/yy'
+
+        return calendar.day_name[theDate.weekday()]
 
 # Helpers
 def create_chain() -> (BaseConversationalRetrievalChain | BaseRetrievalQA):
@@ -135,14 +158,41 @@ async def main() -> None:
     await cl.Message(
         content=f"Ask me anything about OpenShift.", author=botname
     ).send()
-    cl.user_session.set("llm_chain", create_chain())
+
+    llm_math_chain = LLMMathChain.from_llm(llm=create_embedding_and_llm(), verbose=True)
+
+    math_tool = Tool.from_function(
+        func=llm_math_chain.run,
+        name="Calculator",
+        description="Useful for when you need to answer questions about math. This tool is only for math questions and nothing else. Only input math expressions.\",\n"
+    )
+    today_tool = Tool(
+        name = "today's date",
+        func = lambda string: todayDate(),
+        description="use to get today's date",
+        )
+    relative_date_tool = Tool(
+        name = "day of the week",
+        func = lambda string: dayOfWeek(string),
+        description="use to get the day of the week, input is 'today' or date using format mm/dd/yy",
+        )
+
+    agent = initialize_agent(
+        tools = [math_tool,today_tool,relative_date_tool],
+        llm=create_embedding_and_llm(),
+        agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+        verbose=True,
+        )
+
+    chain = create_chain()
+    cl.user_session.set("llm_chain", chain)
 
 @cl.on_message
 async def on_message(message:str) -> None:
     llm_chain:(BaseConversationalRetrievalChain | BaseRetrievalQA) = cl.user_session.get("llm_chain")
 
     res = await llm_chain.acall(message, callbacks=[cl.AsyncLangchainCallbackHandler(stream_final_answer=stream)])
-    content = res["result"]
+    content = res.agent.run["result"]
     content = sub("^System: ", "", sub("^\\??\n\n", "", content))
     if verbose:
         print("main")
