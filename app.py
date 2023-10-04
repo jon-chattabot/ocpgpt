@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 from os import environ, path
 from re import sub
+import re
 import datetime
 from dateutil import parser
 import calendar
@@ -49,14 +50,18 @@ def todayDate():
 # Get day of week for a date (or 'today')
 def dayOfWeek(date):
     if date == 'today':
+        today = today
         return calendar.day_name[today.weekday()]
     else:
-        try:
-            theDate = parser.parse(date)
-        except:
+        date_pattern = re.compile(r'^(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/\d{2}$')
+        if date_pattern.match(date):
+            try:
+                theDate = parser.parse(date)
+                return calendar.day_name[theDate.weekday()]
+            except:
+                return 'invalid date, unable to parse'
+        else:
             return 'invalid date format, please use format: mm/dd/yy'
-
-        return calendar.day_name[theDate.weekday()]
 
 # Helpers
 def create_chain() -> (BaseConversationalRetrievalChain | BaseRetrievalQA):
@@ -76,6 +81,34 @@ def create_chain() -> (BaseConversationalRetrievalChain | BaseRetrievalQA):
     output_key = "result"
     memory = ConversationBufferMemory(memory_key="chat_history", input_key="question", output_key=output_key, return_messages=True)
     return_source_documents = show_sources
+    
+    # llm_math_chain = LLMMathChain.from_llm(llm=llm, verbose=True)
+    
+    # math_tool = Tool.from_function(
+    #     func=llm_math_chain.run,
+    #     name="Calculator",
+    #     description="Useful for when you need to answer questions about math. This tool is only for calculating the day in which the user input wants to know. This tool is for math questions and nothing else. For example, the user asks what day will it be 2 days from now, that is when you use this tool"
+    # )
+    today_tool = Tool(
+        name = "today's date",
+        func = lambda string: todayDate(),
+        description="use to get today's date",
+        )
+    relative_date_tool = Tool(
+        name = "day of the week",
+        func = lambda string: dayOfWeek(string),
+        description="use to get the day of the week, input is 'today' or any relative date like 'tomorrow' ",
+        )
+
+    agent = initialize_agent(
+        tools = [today_tool,relative_date_tool],
+        llm=llm,
+        agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+        verbose=True,
+        max_iterations=3,
+        early_stopping_method="generate"
+        )
+    
     if retrieval_type == "conversational":
         conversation_template = """Combine the chat history and follow up question into a standalone question.
 Chat History: ({chat_history})
@@ -84,14 +117,14 @@ Follow up question: ({question})"""
 
         # https://github.com/langchain-ai/langchain/issues/1800
         # https://stackoverflow.com/questions/76240871/how-do-i-add-memory-to-retrievalqa-from-chain-type-or-how-do-i-add-a-custom-pr
-        return ConversationalRetrievalChain.from_llm(
+        return (ConversationalRetrievalChain.from_llm(
                 llm,
                 retriever,
                 memory=memory,
                 output_key=output_key,
                 verbose=verbose,
                 return_source_documents=return_source_documents,
-                condense_question_prompt=condense_prompt)
+                condense_question_prompt=condense_prompt), agent)
     else:
         messages = [
             SystemMessagePromptTemplate.from_template(SYSTEM_TEMPLATE + "  Ignore any context like {context}."),
@@ -103,14 +136,14 @@ Follow up question: ({question})"""
                 "verbose": verbose,
                 "output_key": output_key
                 }
-        return RetrievalQA.from_chain_type(
+        return (RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
             retriever=retriever,
             return_source_documents=return_source_documents,
             verbose=verbose,
             output_key=output_key,
-            chain_type_kwargs=chain_type_kwargs)
+            chain_type_kwargs=chain_type_kwargs), agent)
 
 def create_embedding_and_llm(embedding_type:str, model_path:str = "", model_id:str = "", embedding_model_name:str = ""):
     """
@@ -159,40 +192,20 @@ async def main() -> None:
         content=f"Ask me anything about OpenShift.", author=botname
     ).send()
 
-    llm_math_chain = LLMMathChain.from_llm(llm=create_embedding_and_llm(), verbose=True)
-
-    math_tool = Tool.from_function(
-        func=llm_math_chain.run,
-        name="Calculator",
-        description="Useful for when you need to answer questions about math. This tool is only for math questions and nothing else. Only input math expressions.\",\n"
-    )
-    today_tool = Tool(
-        name = "today's date",
-        func = lambda string: todayDate(),
-        description="use to get today's date",
-        )
-    relative_date_tool = Tool(
-        name = "day of the week",
-        func = lambda string: dayOfWeek(string),
-        description="use to get the day of the week, input is 'today' or date using format mm/dd/yy",
-        )
-
-    agent = initialize_agent(
-        tools = [math_tool,today_tool,relative_date_tool],
-        llm=create_embedding_and_llm(),
-        agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-        verbose=True,
-        )
-
-    chain = create_chain()
+    (chain, agent) = create_chain()
     cl.user_session.set("llm_chain", chain)
+    cl.user_session.set("agent", agent)
 
 @cl.on_message
 async def on_message(message:str) -> None:
     llm_chain:(BaseConversationalRetrievalChain | BaseRetrievalQA) = cl.user_session.get("llm_chain")
+    agent = cl.user_session.get("agent")
+    result = agent.run(message)
+    print(result)
 
-    res = await llm_chain.acall(message, callbacks=[cl.AsyncLangchainCallbackHandler(stream_final_answer=stream)])
-    content = res.agent.run["result"]
+    res = await llm_chain.acall(message + " " + result, callbacks=[cl.AsyncLangchainCallbackHandler(stream_final_answer=stream)])
+    print(res)
+    content = res["result"]
     content = sub("^System: ", "", sub("^\\??\n\n", "", content))
     if verbose:
         print("main")
