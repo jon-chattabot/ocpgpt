@@ -27,7 +27,19 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse
 load_dotenv()
 
-SYSTEM_TEMPLATE = """You are a helpful bot. If you don't know the answer, just say that you don't know, don't try to make up an answer."""
+SYSTEM_TEMPLATE = """Your name is Avvi and you are a customer service associate for the Rosebar night nightclub and lounge.  You are hip, urban, fun and love to help others.  You will refer to the document for all your information about Rosebar.  You will answer all questions from customers with one sentence.  You sometimes use urban slang
+
+ If you do not understand or know the answer just say,  I am unable to assist you, let me get one of my team members to assist you. Do not make up the answer.  Never say I do not know
+
+Respond to all inquiries in the 3rd person
+
+Provide answers to only what is being asked. Do not provide any additional information outside of what is being asked.
+
+Example: How much is a section on Saturday june 2
+Respond with:  Table prices for Saturday are $750 and $1,000 for the inside cabin and $1,500 and $2,000 for the rooftop deck.
+
+Example:  I am inquiring about a section
+Response; What day and date are you inquiring about?"""
 
 embedding_model_name = environ.get("EMBEDDING_MODEL_NAME", 'all-MiniLM-L6-v2')
 embedding_type = environ.get("EMBEDDING_TYPE", 'openai')
@@ -81,9 +93,9 @@ def create_chain() -> (BaseConversationalRetrievalChain | BaseRetrievalQA):
     output_key = "result"
     memory = ConversationBufferMemory(memory_key="chat_history", input_key="question", output_key=output_key, return_messages=True)
     return_source_documents = show_sources
-    
+
     # llm_math_chain = LLMMathChain.from_llm(llm=llm, verbose=True)
-    
+
     # math_tool = Tool.from_function(
     #     func=llm_math_chain.run,
     #     name="Calculator",
@@ -108,7 +120,7 @@ def create_chain() -> (BaseConversationalRetrievalChain | BaseRetrievalQA):
         max_iterations=3,
         early_stopping_method="generate"
         )
-    
+
     if retrieval_type == "conversational":
         conversation_template = """Combine the chat history and follow up question into a standalone question.
 Chat History: ({chat_history})
@@ -186,10 +198,10 @@ async def main() -> None:
     openai.api_key = environ["OPENAI_API_KEY"]
     await cl.Avatar(
         name=botname,
-        url="https://cloud.redhat.com/hubfs/images/logos/osh/Logo-Red_Hat-OpenShift-A-Reverse-RGB.svg",
+        path="public/chattabot-logo.png"
     ).send()
     await cl.Message(
-        content=f"Ask me anything about OpenShift.", author=botname
+        content=f"Ask me anything about Rosebar.", author=botname
     ).send()
 
     (chain, agent) = create_chain()
@@ -201,10 +213,12 @@ async def on_message(message:str) -> None:
     llm_chain:(BaseConversationalRetrievalChain | BaseRetrievalQA) = cl.user_session.get("llm_chain")
     agent = cl.user_session.get("agent")
     result = agent.run(message)
-    print(result)
+    if verbose:
+        print(result)
 
     res = await llm_chain.acall(message + " " + result, callbacks=[cl.AsyncLangchainCallbackHandler(stream_final_answer=stream)])
-    print(res)
+    if verbose:
+        print(res)
     content = res["result"]
     content = sub("^System: ", "", sub("^\\??\n\n", "", content))
     if verbose:
