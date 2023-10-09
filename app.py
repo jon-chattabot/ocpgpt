@@ -39,7 +39,7 @@ model_path = environ.get("MODEL_PATH", "")
 model_id = environ.get("MODEL_ID", "gpt2")
 openai.api_key = environ.get("OPENAI_API_KEY", "")
 botname = environ.get("BOTNAME", "OCP-GPT")
-temperature = environ.get("TEMPERATURE", 0.0)
+temperature = float(environ.get("TEMPERATURE", 0.0))
 
 today = datetime.datetime.now()
 
