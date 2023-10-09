@@ -31,6 +31,7 @@ Chattabot GPT Solution
     SHOW_SOURCES=false
     RETRIEVAL_TYPE=conversational
     SYSTEM_TEMPLATE="You are a helpful bot. If you do not know the answer, just say that you do not know, do not try to make up an answer."
+    TEMPERATURE=0.0
     ```
 
 ### Ingesting

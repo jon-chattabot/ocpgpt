@@ -39,6 +39,7 @@ model_path = environ.get("MODEL_PATH", "")
 model_id = environ.get("MODEL_ID", "gpt2")
 openai.api_key = environ.get("OPENAI_API_KEY", "")
 botname = environ.get("BOTNAME", "OCP-GPT")
+temperature = environ.get("TEMPERATURE", 0.0)
 
 today = datetime.datetime.now()
 
@@ -148,12 +149,12 @@ def create_embedding_and_llm(embedding_type:str, model_path:str = "", model_id:s
     """
     Create embedding and llm
     """
-    temperature = 0.0
     embedding = None
     llm = None
+
     match embedding_type:
         case "llama":
-            llm = LlamaCpp(model_path=model_path, seed=0, n_ctx=2048, max_tokens=512, temperature=0.0, streaming=stream)
+            llm = LlamaCpp(model_path=model_path, seed=0, n_ctx=2048, max_tokens=512, temperature=temperature, streaming=stream)
             embedding = LlamaCppEmbeddings(model_path=model_path)
         case "openai":
             llm = OpenAI(temperature=temperature, streaming=stream)
