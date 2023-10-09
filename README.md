@@ -1,6 +1,6 @@
-# OCP GPT
+# Chattabot GPT
 
-OpenShift GPT Solution
+Chattabot GPT Solution
 
 ## Prerequisite
 
@@ -27,6 +27,10 @@ OpenShift GPT Solution
 
     ```ini
     OPEN_API_KEY=YOUR_KEY_HERE
+    VERBOSE=false
+    SHOW_SOURCES=false
+    RETRIEVAL_TYPE=conversational
+    SYSTEM_TEMPLATE="You are a helpful bot. If you do not know the answer, just say that you do not know, do not try to make up an answer."
     ```
 
 ### Ingesting

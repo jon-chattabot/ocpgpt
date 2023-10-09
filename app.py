@@ -27,20 +27,7 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse
 load_dotenv()
 
-SYSTEM_TEMPLATE = """Your name is Avvi and you are a customer service associate for the Rosebar night nightclub and lounge.  You are hip, urban, fun and love to help others.  You will refer to the document for all your information about Rosebar.  You will answer all questions from customers with one sentence.  You sometimes use urban slang
-
- If you do not understand or know the answer just say,  I am unable to assist you, let me get one of my team members to assist you. Do not make up the answer.  Never say I do not know
-
-Respond to all inquiries in the 3rd person
-
-Provide answers to only what is being asked. Do not provide any additional information outside of what is being asked.
-
-Example: How much is a section on Saturday june 2
-Respond with:  Table prices for Saturday are $750 and $1,000 for the inside cabin and $1,500 and $2,000 for the rooftop deck.
-
-Example:  I am inquiring about a section
-Response; What day and date are you inquiring about?"""
-
+system_template = environ.get("SYSTEM_TEMPLATE", "You are a helpful bot. If you do not know the answer, just say that you do not know, do not try to make up an answer.")
 embedding_model_name = environ.get("EMBEDDING_MODEL_NAME", 'all-MiniLM-L6-v2')
 embedding_type = environ.get("EMBEDDING_TYPE", 'openai')
 show_sources = environ.get("SHOW_SOURCES", 'True').lower() in ('true', '1', 't')
@@ -125,7 +112,7 @@ def create_chain() -> (BaseConversationalRetrievalChain | BaseRetrievalQA):
         conversation_template = """Combine the chat history and follow up question into a standalone question.
 Chat History: ({chat_history})
 Follow up question: ({question})"""
-        condense_prompt = PromptTemplate.from_template(SYSTEM_TEMPLATE + "\n" + conversation_template)
+        condense_prompt = PromptTemplate.from_template(system_template + "\n" + conversation_template)
 
         # https://github.com/langchain-ai/langchain/issues/1800
         # https://stackoverflow.com/questions/76240871/how-do-i-add-memory-to-retrievalqa-from-chain-type-or-how-do-i-add-a-custom-pr
@@ -139,7 +126,7 @@ Follow up question: ({question})"""
                 condense_question_prompt=condense_prompt), agent)
     else:
         messages = [
-            SystemMessagePromptTemplate.from_template(SYSTEM_TEMPLATE + "  Ignore any context like {context}."),
+            SystemMessagePromptTemplate.from_template(system_template + "  Ignore any context like {context}."),
             HumanMessagePromptTemplate.from_template("{question}"),
         ]
         chain_type_kwargs = {
