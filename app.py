@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from os import environ, path
 from re import sub
 import re
-import datetime
+from datetime import datetime
 from dateutil import parser
 import calendar
 import openai
@@ -41,17 +41,14 @@ openai.api_key = environ.get("OPENAI_API_KEY", "")
 botname = environ.get("BOTNAME", "OCP-GPT")
 temperature = float(environ.get("TEMPERATURE", 0.0))
 
-today = datetime.datetime.now()
-
 # Date functions
-def todayDate():
-    return today.strftime('%m/%d/%y')
+def today_date() -> str:
+    return datetime.now().strftime('%m/%d/%y')
 
 # Get day of week for a date (or 'today')
-def dayOfWeek(date):
+def day_of_week(date):
     if date == 'today':
-        today = today
-        return calendar.day_name[today.weekday()]
+        return calendar.day_name[datetime.now().weekday()]
     else:
         date_pattern = re.compile(r'^(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/\d{2}$')
         if date_pattern.match(date):
@@ -91,12 +88,12 @@ def create_chain() -> (BaseConversationalRetrievalChain | BaseRetrievalQA):
     # )
     today_tool = Tool(
         name = "today's date",
-        func = lambda string: todayDate(),
+        func = lambda string: today_date(),
         description="use to get today's date",
         )
     relative_date_tool = Tool(
         name = "day of the week",
-        func = lambda string: dayOfWeek(string),
+        func = lambda string: day_of_week(string),
         description="use to get the day of the week, input is 'today' or any relative date like 'tomorrow' ",
         )
 
