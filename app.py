@@ -95,45 +95,17 @@ def create_chain() -> (BaseConversationalRetrievalChain | BaseRetrievalQA):
         name = "day of the week",
         func = lambda string: day_of_week(string),
         description="use to get the day of the week, input is 'today' or any relative date like 'tomorrow' ",
-        ) 
-        
-    zero_shot_agent = initialize_agent(
+        )
+
+    agent = initialize_agent(
         tools = [today_tool,relative_date_tool],
         llm=llm,
         agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
         verbose=True,
-        max_iterations=4,
-        stop=["\nObservation:"],
-        handle_parsing_errors="Check you output and make sure it conforms! Do not output an action and a final answer at the same time."
+        max_iterations=3,
+        early_stopping_method="generate"
         )
-    
-    zero_shot_agent.agent.llm_chain.prompt.template = '''
-    Answer the following questions as best you can using our database. \
-    You have access to the following tools:
 
-    today's date: Use it to find the date of today. \
-                    Always used as first tool
-    day of the week: Use this to find the day of a week where the input is 'today' or any relative date like 'tomorrow'. \
-            Use it only after you have tried using the today's date tool.
-
-    Use the following format:
-
-    Question: the input question you must answer
-    Thought: you should always think about what to do
-    Action: the action to take, should be one of [today's date, day of the week]. \
-            Always use today's date first.
-    Action Input: the input to the action
-    Observation: the result of the action
-    ... (this Thought/Action/Action Input/Observation can repeat N times)
-    Thought: I now know the answer
-    Final Answer: the answer to the original input question
-
-    Begin!
-
-    Question: {input}
-    Thought:{agent_scratchpad}
-    '''   
-    
     if retrieval_type == "conversational":
         conversation_template = """Combine the chat history and follow up question into a standalone question.
 Chat History: ({chat_history})
@@ -149,7 +121,7 @@ Follow up question: ({question})"""
                 output_key=output_key,
                 verbose=verbose,
                 return_source_documents=return_source_documents,
-                condense_question_prompt=condense_prompt), zero_shot_agent)
+                condense_question_prompt=condense_prompt), agent)
     else:
         messages = [
             SystemMessagePromptTemplate.from_template(system_template + "  Ignore any context like {context}."),
@@ -168,7 +140,7 @@ Follow up question: ({question})"""
             return_source_documents=return_source_documents,
             verbose=verbose,
             output_key=output_key,
-            chain_type_kwargs=chain_type_kwargs), zero_shot_agent)
+            chain_type_kwargs=chain_type_kwargs), agent)
 
 def create_embedding_and_llm(embedding_type:str, model_path:str = "", model_id:str = "", embedding_model_name:str = ""):
     """
@@ -219,12 +191,12 @@ async def main() -> None:
 
     (chain, agent) = create_chain()
     cl.user_session.set("llm_chain", chain)
-    cl.user_session.set("zero_shot_agent", agent)
+    cl.user_session.set("agent", agent)
 
 @cl.on_message
 async def on_message(message:str) -> None:
     llm_chain:(BaseConversationalRetrievalChain | BaseRetrievalQA) = cl.user_session.get("llm_chain")
-    agent = cl.user_session.get("zero_shot_agent")
+    agent = cl.user_session.get("agent")
     result = agent.run(message)
     if verbose:
         print(result)
