@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from os import environ, path
 from re import sub
 import re
-import datetime
+from datetime import datetime
 from dateutil import parser
 import calendar
 import openai
@@ -27,8 +27,7 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse
 load_dotenv()
 
-SYSTEM_TEMPLATE = """You are a helpful bot. If you don't know the answer, just say that you don't know, don't try to make up an answer."""
-
+system_template = environ.get("SYSTEM_TEMPLATE", "You are a helpful bot. If you do not know the answer, just say that you do not know, do not try to make up an answer.")
 embedding_model_name = environ.get("EMBEDDING_MODEL_NAME", 'all-MiniLM-L6-v2')
 embedding_type = environ.get("EMBEDDING_TYPE", 'openai')
 show_sources = environ.get("SHOW_SOURCES", 'True').lower() in ('true', '1', 't')
@@ -40,18 +39,16 @@ model_path = environ.get("MODEL_PATH", "")
 model_id = environ.get("MODEL_ID", "gpt2")
 openai.api_key = environ.get("OPENAI_API_KEY", "")
 botname = environ.get("BOTNAME", "OCP-GPT")
-
-today = datetime.datetime.now()
+temperature = float(environ.get("TEMPERATURE", 0.0))
 
 # Date functions
-def todayDate():
-    return today.strftime('%m/%d/%y')
+def today_date() -> str:
+    return datetime.now().strftime('%m/%d/%y')
 
 # Get day of week for a date (or 'today')
-def dayOfWeek(date):
+def day_of_week(date):
     if date == 'today':
-        today = today
-        return calendar.day_name[today.weekday()]
+        return calendar.day_name[datetime.now().weekday()]
     else:
         date_pattern = re.compile(r'^(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/\d{2}$')
         if date_pattern.match(date):
@@ -81,9 +78,9 @@ def create_chain() -> (BaseConversationalRetrievalChain | BaseRetrievalQA):
     output_key = "result"
     memory = ConversationBufferMemory(memory_key="chat_history", input_key="question", output_key=output_key, return_messages=True)
     return_source_documents = show_sources
-    
+
     # llm_math_chain = LLMMathChain.from_llm(llm=llm, verbose=True)
-    
+
     # math_tool = Tool.from_function(
     #     func=llm_math_chain.run,
     #     name="Calculator",
@@ -91,29 +88,57 @@ def create_chain() -> (BaseConversationalRetrievalChain | BaseRetrievalQA):
     # )
     today_tool = Tool(
         name = "today's date",
-        func = lambda string: todayDate(),
+        func = lambda string: today_date(),
         description="use to get today's date",
         )
     relative_date_tool = Tool(
         name = "day of the week",
-        func = lambda string: dayOfWeek(string),
+        func = lambda string: day_of_week(string),
         description="use to get the day of the week, input is 'today' or any relative date like 'tomorrow' ",
-        )
-
-    agent = initialize_agent(
+        ) 
+        
+    zero_shot_agent = initialize_agent(
         tools = [today_tool,relative_date_tool],
         llm=llm,
         agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
         verbose=True,
-        max_iterations=3,
-        early_stopping_method="generate"
+        max_iterations=4,
+        stop=["\nObservation:"],
+        handle_parsing_errors="Check you output and make sure it conforms! Do not output an action and a final answer at the same time."
         )
+    
+    zero_shot_agent.agent.llm_chain.prompt.template = '''
+    Answer the following questions as best you can using our database. \
+    You have access to the following tools:
+
+    today's date: Use it to find the date of today. \
+                    Always used as first tool
+    day of the week: Use this to find the day of a week where the input is 'today' or any relative date like 'tomorrow'. \
+            Use it only after you have tried using the today's date tool.
+
+    Use the following format:
+
+    Question: the input question you must answer
+    Thought: you should always think about what to do
+    Action: the action to take, should be one of [today's date, day of the week]. \
+            Always use today's date first.
+    Action Input: the input to the action
+    Observation: the result of the action
+    ... (this Thought/Action/Action Input/Observation can repeat N times)
+    Thought: I now know the answer
+    Final Answer: the answer to the original input question
+
+    Begin!
+
+    Question: {input}
+    Thought:{agent_scratchpad}
+    '''   
     
     if retrieval_type == "conversational":
         conversation_template = """Combine the chat history and follow up question into a standalone question.
 Chat History: ({chat_history})
 Follow up question: ({question})"""
-        condense_prompt = PromptTemplate.from_template(SYSTEM_TEMPLATE + "\n" + conversation_template)
+        condense_prompt = PromptTemplate.from_template(system_template + "\n" + conversation_template)
 
         # https://github.com/langchain-ai/langchain/issues/1800
         # https://stackoverflow.com/questions/76240871/how-do-i-add-memory-to-retrievalqa-from-chain-type-or-how-do-i-add-a-custom-pr
@@ -124,10 +149,10 @@ Follow up question: ({question})"""
                 output_key=output_key,
                 verbose=verbose,
                 return_source_documents=return_source_documents,
-                condense_question_prompt=condense_prompt), agent)
+                condense_question_prompt=condense_prompt), zero_shot_agent)
     else:
         messages = [
-            SystemMessagePromptTemplate.from_template(SYSTEM_TEMPLATE + "  Ignore any context like {context}."),
+            SystemMessagePromptTemplate.from_template(system_template + "  Ignore any context like {context}."),
             HumanMessagePromptTemplate.from_template("{question}"),
         ]
         chain_type_kwargs = {
@@ -143,18 +168,18 @@ Follow up question: ({question})"""
             return_source_documents=return_source_documents,
             verbose=verbose,
             output_key=output_key,
-            chain_type_kwargs=chain_type_kwargs), agent)
+            chain_type_kwargs=chain_type_kwargs), zero_shot_agent)
 
 def create_embedding_and_llm(embedding_type:str, model_path:str = "", model_id:str = "", embedding_model_name:str = ""):
     """
     Create embedding and llm
     """
-    temperature = 0.0
     embedding = None
     llm = None
+
     match embedding_type:
         case "llama":
-            llm = LlamaCpp(model_path=model_path, seed=0, n_ctx=2048, max_tokens=512, temperature=0.0, streaming=stream)
+            llm = LlamaCpp(model_path=model_path, seed=0, n_ctx=2048, max_tokens=512, temperature=temperature, streaming=stream)
             embedding = LlamaCppEmbeddings(model_path=model_path)
         case "openai":
             llm = OpenAI(temperature=temperature, streaming=stream)
@@ -186,25 +211,27 @@ async def main() -> None:
     openai.api_key = environ["OPENAI_API_KEY"]
     await cl.Avatar(
         name=botname,
-        url="https://cloud.redhat.com/hubfs/images/logos/osh/Logo-Red_Hat-OpenShift-A-Reverse-RGB.svg",
+        path="public/chattabot-logo.png"
     ).send()
     await cl.Message(
-        content=f"Ask me anything about OpenShift.", author=botname
+        content=f"Ask me anything about Rosebar.", author=botname
     ).send()
 
     (chain, agent) = create_chain()
     cl.user_session.set("llm_chain", chain)
-    cl.user_session.set("agent", agent)
+    cl.user_session.set("zero_shot_agent", agent)
 
 @cl.on_message
 async def on_message(message:str) -> None:
     llm_chain:(BaseConversationalRetrievalChain | BaseRetrievalQA) = cl.user_session.get("llm_chain")
-    agent = cl.user_session.get("agent")
+    agent = cl.user_session.get("zero_shot_agent")
     result = agent.run(message)
-    print(result)
+    if verbose:
+        print(result)
 
     res = await llm_chain.acall(message + " " + result, callbacks=[cl.AsyncLangchainCallbackHandler(stream_final_answer=stream)])
-    print(res)
+    if verbose:
+        print(res)
     content = res["result"]
     content = sub("^System: ", "", sub("^\\??\n\n", "", content))
     if verbose:

@@ -1,13 +1,7 @@
-# Welcome to OCP-GPT! 🚀
+# Welcome to Chattabot! 🚀
 
 Hello there human! 🤖
 
-## What do I know?
+## Who am I?
 
-I'm still very much a work in progress, but I've been trained on the open-source
-OpenShift documentation.
-So at this point, that's the extent of my knowledge.
-
-## What will I know?
-
-Over time I'll be getting smarter and smarter as I learn more.
+I'm still very much a work in progress, but will get better over time the more I learn.
