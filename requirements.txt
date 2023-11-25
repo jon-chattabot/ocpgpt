@@ -14,7 +14,7 @@ boto3==1.28.24
 botocore==1.31.24
 certifi==2023.5.7
 cffi==1.15.1
-chainlit==0.6.2
+chainlit==0.7.604
 chardet==5.1.0
 charset-normalizer==3.2.0
 chromadb==0.3.23
@@ -34,7 +34,7 @@ ebcdic==1.1.1
 et-xmlfile==1.1.0
 extract-msg==0.41.1
 faiss-cpu==1.7.4
-fastapi==0.97.0
+fastapi==0.100.1
 fastapi-socketio==0.0.10
 filelock==3.12.2
 filetype==1.2.0
@@ -58,10 +58,11 @@ jmespath==1.0.1
 joblib==1.3.1
 jsonpatch==1.33
 jsonpointer==2.4
-langchain==0.0.335
+langchain==0.0.340
 langchainplus-sdk==0.0.20
 langsmith==0.0.64
 lark-parser==0.12.0
+Lazify==0.4.0
 lit==17.0.5
 llama-cpp-python==0.1.77
 lxml==4.9.3
@@ -130,6 +131,7 @@ python-dotenv==1.0.0
 python-engineio==4.5.1
 python-graphql-client==0.4.3
 python-magic==0.4.27
+python-multipart==0.0.6
 python-pptx==0.6.21
 python-socketio==5.8.0
 pytz==2023.3
@@ -174,9 +176,9 @@ tzlocal==4.2
 unstructured==0.6.6
 uptrace==1.18.0
 urllib3==1.26.16
-uvicorn==0.22.0
+uvicorn==0.23.2
 uvloop==0.17.0
-watchfiles==0.19.0
+watchfiles==0.20.0
 websockets==11.0.3
 wrapt==1.14.1
 XlsxWriter==3.1.2
