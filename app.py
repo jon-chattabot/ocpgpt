@@ -137,7 +137,7 @@ Follow up question: ({question})"""
                 retriever,
                 memory=memory,
                 output_key=output_key,
-                verbose=verbose,
+                verbose=True,
                 return_source_documents=return_source_documents,
                 condense_question_prompt=condense_prompt), agent)
     else:
@@ -150,7 +150,7 @@ Follow up question: ({question})"""
         chain_type_kwargs = {
             "prompt": ChatPromptTemplate.from_messages(messages),
             "memory": memory,
-            "verbose": verbose,
+            "verbose": True,
             "output_key": output_key,
         }
         return (RetrievalQA.from_chain_type(
@@ -158,7 +158,7 @@ Follow up question: ({question})"""
             chain_type="stuff",
             retriever=retriever,
             return_source_documents=return_source_documents,
-            verbose=verbose,
+            verbose=True,
             output_key=output_key,
             chain_type_kwargs=chain_type_kwargs), agent)
 
@@ -213,10 +213,7 @@ def process_response(res:dict) -> list:
 async def main() -> None:
     ''' Startup '''
     openai.api_key = environ["OPENAI_API_KEY"]
-    await cl.Avatar(
-        name=botname,
-        path="public/chattabot-logo.png"
-    ).send()
+    await cl.Avatar(name=botname, path="./public/logo_dark.png").send()
     await cl.Message(content="Ask me anything about Rosebar.", author=botname).send()
 
     (chain, agent) = create_chain()
