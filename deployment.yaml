@@ -1,0 +1,11 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+      - name: app-container
+        image: 031572487547.dkr.ecr.us-west-2.amazonaws.com/chattabot:latest
