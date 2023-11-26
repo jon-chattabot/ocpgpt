@@ -1,14 +1,10 @@
 from dotenv import load_dotenv
 from os import environ, path
 from re import sub
-import re
-from datetime import datetime
-from dateutil import parser
-import calendar
 import openai
 import chainlit as cl
-from langchain import PromptTemplate
-from langchain.chains import RetrievalQA, ConversationalRetrievalChain
+from langchain.prompts import PromptTemplate
+from langchain.chains import RetrievalQA, ConversationalRetrievalChain, LLMMathChain
 from langchain.vectorstores import FAISS
 from langchain.embeddings import (
     OpenAIEmbeddings,
@@ -26,11 +22,11 @@ from langchain.chains.conversational_retrieval.base import (
     BaseConversationalRetrievalChain,
 )
 from langchain.memory import ConversationBufferMemory
-from langchain.agents import initialize_agent, AgentType, Tool
-from langchain import LLMMathChain
+from langchain.agents import initialize_agent, AgentType
 from chainlit.server import app
 from fastapi import Request
 from fastapi.responses import HTMLResponse
+from lib.tools import TodaysDateTool, DayOfTheWeekTool
 
 load_dotenv()
 
@@ -51,25 +47,6 @@ openai.api_key = environ.get("OPENAI_API_KEY", "")
 botname = environ.get("BOTNAME", "OCP-GPT")
 temperature = float(environ.get("TEMPERATURE", 0.0))
 
-# Date functions
-def today_date() -> str:
-    return datetime.now().strftime('%m/%d/%y')
-
-# Get day of week for a date (or 'today')
-def day_of_week(date):
-    if date == 'today':
-        return calendar.day_name[datetime.now().weekday()]
-    else:
-        date_pattern = re.compile(r'^(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/\d{2}$')
-        if date_pattern.match(date):
-            try:
-                theDate = parser.parse(date)
-                return calendar.day_name[theDate.weekday()]
-            except:
-                return 'invalid date, unable to parse'
-        else:
-            return 'invalid date format, please use format: mm/dd/yy'
-
 # Helpers
 def create_chain() -> (BaseConversationalRetrievalChain | BaseRetrievalQA):
     """ Load model to ask questions of it """
@@ -89,45 +66,27 @@ def create_chain() -> (BaseConversationalRetrievalChain | BaseRetrievalQA):
     memory = ConversationBufferMemory(
         memory_key="chat_history",
         input_key="question",
-        output_key=output_key, 
+        output_key=output_key,
         return_messages=True
     )
     return_source_documents = show_sources
 
-    # llm_math_chain = LLMMathChain.from_llm(llm=llm, verbose=True)
-
-    # math_tool = Tool.from_function(
-    #     func=llm_math_chain.run,
-    #     name="Calculator",
-    #     description="Useful for when you need to answer questions about math. This tool is only for calculating the day in which the user input wants to know. This tool is for math questions and nothing else. For example, the user asks what day will it be 2 days from now, that is when you use this tool"
-    # )
-    today_tool = Tool(
-        name = "today's date",
-        func = lambda string: today_date(),
-        description="use to get today's date",
-    )
-    relative_date_tool = Tool(
-        name = "day of the week",
-        func = lambda string: day_of_week(string),
-        description="use to get the day of the week, input is 'today' or any relative date like 'tomorrow' ",
-    )
-
     agent = initialize_agent(
-        tools = [today_tool, relative_date_tool],
+        tools=[TodaysDateTool(), DayOfTheWeekTool()],
         llm=llm,
         agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
         verbose=True,
-        max_iterations=4,
-        stop=["\nObservation:"],
-        handle_parsing_errors="Check you output and make sure it conforms! Do not output an action and a final answer at the same time."
+        max_iterations=3,
+        early_stopping_method="generate",
     )
 
     if retrieval_type == "conversational":
         conversation_template = """Combine the chat history and follow up question into a standalone question.
 Chat History: ({chat_history})
 Follow up question: ({question})"""
+        date_template = f"As additional context, today is {DayOfTheWeekTool.today()} {TodaysDateTool.today()}."
         condense_prompt = PromptTemplate.from_template(
-            system_template + "\n" + conversation_template
+            system_template + "\n\n" + date_template + "\n\n" + conversation_template
         )
 
         # https://github.com/langchain-ai/langchain/issues/1800
@@ -140,27 +99,28 @@ Follow up question: ({question})"""
                 verbose=True,
                 return_source_documents=return_source_documents,
                 condense_question_prompt=condense_prompt), agent)
-    else:
-        messages = [
-            SystemMessagePromptTemplate.from_template(
-                system_template + "  Ignore any context like {context}."
-            ),
-            HumanMessagePromptTemplate.from_template("{question}"),
-        ]
-        chain_type_kwargs = {
-            "prompt": ChatPromptTemplate.from_messages(messages),
-            "memory": memory,
-            "verbose": True,
-            "output_key": output_key,
-        }
-        return (RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",
-            retriever=retriever,
-            return_source_documents=return_source_documents,
-            verbose=True,
-            output_key=output_key,
-            chain_type_kwargs=chain_type_kwargs), agent)
+
+    # non-conversational
+    messages = [
+        SystemMessagePromptTemplate.from_template(
+            system_template + "  Ignore any context like {context}."
+        ),
+        HumanMessagePromptTemplate.from_template("{question}"),
+    ]
+    chain_type_kwargs = {
+        "prompt": ChatPromptTemplate.from_messages(messages),
+        "memory": memory,
+        "verbose": True,
+        "output_key": output_key,
+    }
+    return (RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=retriever,
+        return_source_documents=return_source_documents,
+        verbose=True,
+        output_key=output_key,
+        chain_type_kwargs=chain_type_kwargs), agent)
 
 def create_embedding_and_llm(
     embedding_type: str,
@@ -225,15 +185,15 @@ async def on_message(message:str) -> None:
     llm_chain: (
         BaseConversationalRetrievalChain | BaseRetrievalQA
     ) = cl.user_session.get("llm_chain")
-    
+
     res = await llm_chain.acall(
-        message,  # + " " + result,
+        message,
         callbacks=[cl.AsyncLangchainCallbackHandler(stream_final_answer=stream)],
     )
     if verbose:
-        print("this is the result of the chain")
+        print("This is the result of the chain:")
         print(res)
-    content = res["result"]
+    content = res['result']
     content = sub("^System: ", "", sub("^\\??\n\n", "", content))
     if verbose:
         print("main")
