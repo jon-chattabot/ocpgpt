@@ -29,7 +29,6 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/chattabotgpt:latest
-
   build-and-push:
     runs-on: ubuntu-latest
     steps:

@@ -1,6 +1,7 @@
-FROM registry.access.redhat.com/ubi9/python-311@sha256:381d9f3aa228ab406a1dff0dda4950c5f321a9312be37442a0770e62f651b7ba
+FROM registry.access.redhat.com/ubi9/python-311@sha256:944fe5d61deb208b58dbb222bbd9013231511f15ad67b193f2717ed7da8ef97b
 USER root
 RUN dnf install -y python3-devel
+RUN pip install --upgrade pip
 
 COPY requirements.txt .
 RUN pip install -r ./requirements.txt
