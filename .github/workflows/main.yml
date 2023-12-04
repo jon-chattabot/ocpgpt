@@ -29,3 +29,12 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/chattabotgpt:latest
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build and push Docker image
+        run: |
+          $(aws ecr get-login --no-include-email --region us-west-2)
+          docker build -t my-chattabot:latest .
+          docker tag chattabot:latest 031572487547.dkr.ecr.us-west-2.amazonaws.com/chattabot:latest
+          docker push 031572487547.dkr.ecr.us-west-2.amazonaws.com/chattabot:latest
