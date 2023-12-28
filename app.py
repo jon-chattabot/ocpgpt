@@ -30,6 +30,7 @@ from lib.tools import TodaysDateTool, DayOfTheWeekTool
 
 load_dotenv()
 
+environ['TZ'] = environ.get("TIMEZONE", 'America/New_York')
 system_template = environ.get(
     "SYSTEM_TEMPLATE",
     "You are a helpful bot. If you do not know the answer, just say that you do not know, do not try to make up an answer."
@@ -40,6 +41,7 @@ show_sources = environ.get("SHOW_SOURCES", 'True').lower() in ('true', '1', 't')
 retrieval_type = environ.get("RETRIEVAL_TYPE", "conversational")  # conversational/qa
 verbose = environ.get("VERBOSE", 'True').lower() in ('true', '1', 't')
 stream = environ.get("STREAM", 'True').lower() in ('true', '1', 't')
+message_prompt = environ.get("MESSAGE_PROMPT", 'Ask me anything!')
 
 model_path = environ.get("MODEL_PATH", "")
 model_id = environ.get("MODEL_ID", "gpt2")
@@ -174,7 +176,7 @@ async def main() -> None:
     ''' Startup '''
     openai.api_key = environ["OPENAI_API_KEY"]
     await cl.Avatar(name=botname, path="./public/logo_dark.png").send()
-    await cl.Message(content="Ask me anything about Rosebar.", author=botname).send()
+    await cl.Message(content=message_prompt, author=botname).send()
 
     (chain, agent) = create_chain()
     cl.user_session.set("llm_chain", chain)
