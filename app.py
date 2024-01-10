@@ -44,7 +44,7 @@ stream = environ.get("STREAM", 'True').lower() in ('true', '1', 't')
 message_prompt = environ.get("MESSAGE_PROMPT", 'Ask me anything!')
 
 model_path = environ.get("MODEL_PATH", "")
-model_id = environ.get("MODEL_ID", "gpt2")
+model_id = environ.get("MODEL_ID", "gpt-4")
 openai.api_key = environ.get("OPENAI_API_KEY", "")
 botname = environ.get("BOTNAME", "OCP-GPT")
 temperature = float(environ.get("TEMPERATURE", 0.0))
@@ -148,7 +148,7 @@ def create_embedding_and_llm(
             )
             embedding = LlamaCppEmbeddings(model_path=model_path)
         case "openai":
-            llm = OpenAI(temperature=temperature, streaming=stream)
+            llm = OpenAI(temperature=temperature, streaming=stream, model_name=model_id)
             embedding = OpenAIEmbeddings()
         case "huggingface":
             # gpu = runhouse.cluster(name="rh-a10x", instance_type="A100:1")
